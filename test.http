@@ -1,0 +1,190 @@
+@host = https://cf-auth-starter.lateshoy.workers.dev
+
+# Вставляй сюда session после LOGIN
+@session = 
+
+
+### Bootstrap первого администратора
+POST {{host}}/api/auth/bootstrap
+Content-Type: application/json
+
+{
+  "email": "admin@test.no",
+  "password": "Test12345"
+}
+
+
+
+###############################################################################
+# AUTH
+###############################################################################
+
+### Register
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@test.no",
+  "password": "Test12345"
+}
+
+
+### Login admin
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@test.no",
+  "password": "Test12345"
+}
+
+
+### Me
+GET {{host}}/api/auth/me
+Cookie: session={{session}}
+
+
+### Неверная сессия — ожидаем 401
+GET {{host}}/api/auth/me
+Cookie: session=123456789
+
+
+###############################################################################
+# USERS
+###############################################################################
+
+### Список пользователей
+GET {{host}}/api/admin/users
+Cookie: session={{session}}
+
+
+### Получить пользователя
+GET {{host}}/api/admin/users/1
+Cookie: session={{session}}
+
+
+### Создать пользователя
+POST {{host}}/api/admin/users
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "email": "test2@test.no",
+  "password": "Test12345",
+  "roleId": 2
+}
+
+
+### Изменить пользователя
+PUT {{host}}/api/admin/users/2
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "roleId": 2,
+  "active": true
+}
+
+
+### Заблокировать пользователя
+PUT {{host}}/api/admin/users/2
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "roleId": 2,
+  "active": false
+}
+
+
+### Сменить пароль
+PUT {{host}}/api/admin/users/2/password
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "password": "NewTest12345"
+}
+
+
+###############################################################################
+# ROLES
+###############################################################################
+
+### Все роли
+GET {{host}}/api/admin/roles
+Cookie: session={{session}}
+
+
+### Все permissions
+GET {{host}}/api/admin/roles/permissions
+Cookie: session={{session}}
+
+
+### Права роли admin
+GET {{host}}/api/admin/roles/1/permissions
+Cookie: session={{session}}
+
+
+### Права роли user
+GET {{host}}/api/admin/roles/2/permissions
+Cookie: session={{session}}
+
+
+###############################################################################
+# PERMISSIONS
+###############################################################################
+
+### Создать тестовое право
+POST {{host}}/api/admin/roles/permissions
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "code": "test.read",
+  "name": "Read test data",
+  "groupName": "test"
+}
+
+
+### Изменить permission
+# ID подставь из ответа предыдущего запроса
+PUT {{host}}/api/admin/roles/permissions/9
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "code": "test.read",
+  "name": "Read test",
+  "groupName": "test"
+}
+
+
+###############################################################################
+# ROLE PERMISSIONS
+###############################################################################
+
+### Выдать роли user право users.read
+# Здесь 2 — пример ID permission users.read.
+# Сначала посмотри реальный ID через GET permissions.
+PUT {{host}}/api/admin/roles/2/permissions
+Content-Type: application/json
+Cookie: session={{session}}
+
+{
+  "permissionIds": [2]
+}
+
+
+###############################################################################
+# LOGOUT
+###############################################################################
+
+### Logout
+POST {{host}}/api/auth/logout
+Cookie: session={{session}}
+
+
+### После logout — ожидаем 401
+GET {{host}}/api/auth/me
+Cookie: session={{session}}
