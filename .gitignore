@@ -15,6 +15,9 @@ dist/
 node_modules/
 .wrangler
 
+# generated
+repomix-output.xml
+
 # env / secrets
 .env
 .env.*
