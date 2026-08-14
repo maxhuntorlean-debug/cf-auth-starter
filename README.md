@@ -62,7 +62,6 @@ Cloudflare Worker
 Hono
   │
   ├── Auth Middleware
-  │
   ├── Permission Middleware
   │
   ▼
@@ -123,6 +122,19 @@ role_permissions
 sessions
 ```
 
+Пользователь:
+
+```text
+users
+├── id
+├── name
+├── username
+├── password_hash
+├── role_id
+├── active
+└── created_at
+```
+
 Связи:
 
 ```text
@@ -181,7 +193,7 @@ permissions.read
 permissions.update
 ```
 
-Права можно добавлять в дальнейшем под конкретный проект.
+В дальнейшем можно добавлять права конкретного проекта.
 
 Например:
 
@@ -219,9 +231,7 @@ users.get(
 )
 ```
 
-Сначала проверяется сессия пользователя.
-
-Затем проверяется наличие конкретного permission.
+Логика:
 
 ```text
 Request
@@ -248,14 +258,14 @@ Route
 После успешного login:
 
 ```text
-password
-   ↓
-проверка hash
-   ↓
+username + password
+        ↓
+проверка password hash
+        ↓
 случайный session token
-   ↓
+        ↓
 SHA-256(token)
-   ↓
+        ↓
 D1 sessions
 ```
 
@@ -299,8 +309,6 @@ salt:hash
 
 # Установка
 
-После создания нового проекта:
-
 ```bash
 npm install
 ```
@@ -329,7 +337,7 @@ npx wrangler whoami
 npx wrangler d1 create my-project-db
 ```
 
-Для binding всегда используем:
+Для binding используем:
 
 ```text
 DB
@@ -342,7 +350,7 @@ What binding name would you like to use?
 DB
 ```
 
-Если разработка должна сразу работать с удалённой Cloudflare D1:
+Если локальная разработка должна работать сразу с удалённой D1:
 
 ```text
 For local dev, do you want to connect to the remote resource?
@@ -353,12 +361,11 @@ y
 
 # wrangler.jsonc
 
-Пример конфигурации нового проекта:
+Пример:
 
 ```jsonc
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-
   "name": "my-project-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-14",
@@ -412,14 +419,15 @@ https://my-project-api.<account>.workers.dev
 
 На новой пустой базе ещё нет пользователей.
 
-Первый администратор создаётся один раз через bootstrap.
+Первый администратор создаётся один раз через bootstrap:
 
 ```http
 POST /api/auth/bootstrap
 Content-Type: application/json
 
 {
-  "email": "admin@example.com",
+  "name": "Administrator",
+  "username": "admin",
   "password": "CHANGE_ME"
 }
 ```
@@ -431,7 +439,8 @@ Content-Type: application/json
   "ok": true,
   "user": {
     "id": 1,
-    "email": "admin@example.com",
+    "name": "Administrator",
+    "username": "admin",
     "role": "admin"
   }
 }
@@ -458,7 +467,7 @@ Content-Type: application/json
 POST /api/auth/bootstrap
 ```
 
-Создание первого администратора.
+Создаёт первого администратора.
 
 Работает только на пустой базе.
 
@@ -474,7 +483,8 @@ POST /api/auth/register
 
 ```json
 {
-  "email": "user@example.com",
+  "name": "Test User",
+  "username": "testuser",
   "password": "Test12345"
 }
 ```
@@ -497,7 +507,7 @@ POST /api/auth/login
 
 ```json
 {
-  "email": "admin@example.com",
+  "username": "admin",
   "password": "Test12345"
 }
 ```
@@ -519,7 +529,8 @@ GET /api/auth/me
   "ok": true,
   "user": {
     "id": 1,
-    "email": "admin@example.com",
+    "name": "Administrator",
+    "username": "admin",
     "role": "admin"
   }
 }
@@ -593,7 +604,8 @@ users.create
 
 ```json
 {
-  "email": "user@example.com",
+  "name": "John Smith",
+  "username": "john",
   "password": "Test12345",
   "roleId": 2
 }
@@ -617,6 +629,7 @@ users.update
 
 ```json
 {
+  "name": "John Smith",
   "roleId": 2,
   "active": true
 }
@@ -626,6 +639,7 @@ users.update
 
 ```json
 {
+  "name": "John Smith",
   "roleId": 2,
   "active": false
 }
@@ -716,7 +730,7 @@ roles.update
 }
 ```
 
-Это полностью заменяет набор permissions указанной роли.
+Этот запрос полностью заменяет набор permissions указанной роли.
 
 ---
 
@@ -786,8 +800,6 @@ permissions.update
 
 # HTTP статусы
 
-API использует стандартные HTTP-коды:
-
 ```text
 200 OK
 201 Created
@@ -799,7 +811,7 @@ API использует стандартные HTTP-коды:
 500 Internal Server Error
 ```
 
-Разница между основными ошибками:
+Разница:
 
 ```text
 401
@@ -807,14 +819,14 @@ API использует стандартные HTTP-коды:
 
 403
 → пользователь авторизован,
-  но у него нет нужного права
+  но нет нужного permission
 ```
 
 ---
 
 # Разработка нового проекта
 
-После копирования starter-а ядро желательно не смешивать с бизнес-логикой.
+После копирования starter-а бизнес-модули добавляются отдельно.
 
 Например интернет-магазин:
 
@@ -861,7 +873,7 @@ Auth-систему при этом переписывать не требует
 ```text
 cf-auth-starter
       ↓
-создать новый Git repository
+новый Git repository
       ↓
 поменять имя Worker
       ↓
@@ -869,7 +881,7 @@ cf-auth-starter
       ↓
 binding DB
       ↓
-применить migrations
+применить migration
       ↓
 deploy
       ↓
@@ -898,13 +910,11 @@ npm run deploy
 POST /api/auth/bootstrap
 ```
 
-После этого проект готов к дальнейшей разработке.
-
 ---
 
 # Git
 
-Перед commit проверить:
+Перед commit:
 
 ```bash
 git status
@@ -918,6 +928,7 @@ node_modules/
 .dev.vars
 .env
 .env.*
+repomix-output.xml
 ```
 
 Первый commit:
@@ -936,15 +947,20 @@ git remote add origin https://github.com/USERNAME/cf-auth-starter.git
 git push -u origin main
 ```
 
-Рекомендуется сделать репозиторий GitHub Template.
+Рекомендуется включить:
+
+```text
+GitHub
+→ Settings
+→ General
+→ Template repository
+```
 
 Тогда новый проект можно создавать через:
 
 ```text
 Use this template
 ```
-
-без копирования истории предыдущего проекта.
 
 ---
 
@@ -970,9 +986,9 @@ bootstrap работает только один раз
 
 # test.http
 
-Файл `test.http` используется для проверки API прямо из VS Code.
+Файл `test.http` используется для проверки API из VS Code.
 
-Рекомендуемый порядок тестирования:
+Рекомендуемый порядок:
 
 ```text
 bootstrap
@@ -996,7 +1012,7 @@ logout
 
 # Цель проекта
 
-`cf-auth-starter` — не готовое бизнес-приложение.
+`cf-auth-starter` — это не готовое бизнес-приложение.
 
 Это минимальное ядро:
 
@@ -1014,4 +1030,4 @@ Sessions
 D1
 ```
 
-На его основе быстро строятся конкретные приложения без повторного написания авторизации и системы прав.
+На его основе можно быстро строить конкретные приложения без повторного написания авторизации и системы прав.

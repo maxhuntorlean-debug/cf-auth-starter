@@ -19,6 +19,12 @@ type Bindings = {
 
 const auth = new Hono<{ Bindings: Bindings }>()
 
+
+// ======================================
+// BOOTSTRAP
+// Первый администратор
+// ======================================
+
 auth.post('/bootstrap', async (c) => {
   const usersCount = await c.env.DB
     .prepare(`
@@ -40,18 +46,20 @@ auth.post('/bootstrap', async (c) => {
   }
 
   const body = await c.req.json<{
-    email: string
+    name: string
+    username: string
     password: string
   }>()
 
-  const email = String(body.email ?? '').trim()
+  const name = String(body.name ?? '').trim()
+  const username = String(body.username ?? '').trim()
   const password = String(body.password ?? '')
 
-  if (!email || !password) {
+  if (!name || !username || !password) {
     return c.json(
       {
         ok: false,
-        error: 'Email and password are required'
+        error: 'Name, username and password are required'
       },
       400
     )
@@ -84,15 +92,17 @@ auth.post('/bootstrap', async (c) => {
   const result = await c.env.DB
     .prepare(`
       INSERT INTO users (
-        email,
+        name,
+        username,
         password_hash,
         role_id,
         active
       )
-      VALUES (?, ?, ?, 1)
+      VALUES (?, ?, ?, ?, 1)
     `)
     .bind(
-      email,
+      name,
+      username,
       passwordHash,
       adminRole.id
     )
@@ -103,7 +113,8 @@ auth.post('/bootstrap', async (c) => {
       ok: true,
       user: {
         id: result.meta.last_row_id,
-        email,
+        name,
+        username,
         role: 'admin'
       }
     },
@@ -111,17 +122,28 @@ auth.post('/bootstrap', async (c) => {
   )
 })
 
+
+// ======================================
+// REGISTER
+// Обычный пользователь
+// ======================================
+
 auth.post('/register', async (c) => {
   const body = await c.req.json<{
-    email: string
+    name: string
+    username: string
     password: string
   }>()
 
-  if (!body.email || !body.password) {
+  const name = String(body.name ?? '').trim()
+  const username = String(body.username ?? '').trim()
+  const password = String(body.password ?? '')
+
+  if (!name || !username || !password) {
     return c.json(
       {
         ok: false,
-        error: 'Email and password are required'
+        error: 'Name, username and password are required'
       },
       400
     )
@@ -131,10 +153,10 @@ auth.post('/register', async (c) => {
     .prepare(`
       SELECT id
       FROM users
-      WHERE email = ?
+      WHERE username = ?
       LIMIT 1
     `)
-    .bind(body.email)
+    .bind(username)
     .first()
 
   if (existingUser) {
@@ -169,19 +191,21 @@ auth.post('/register', async (c) => {
     )
   }
 
-  const passwordHash = await hashPassword(body.password)
+  const passwordHash = await hashPassword(password)
 
   const result = await c.env.DB
     .prepare(`
       INSERT INTO users (
-        email,
+        name,
+        username,
         password_hash,
         role_id
       )
-      VALUES (?, ?, ?)
+      VALUES (?, ?, ?, ?)
     `)
     .bind(
-      body.email,
+      name,
+      username,
       passwordHash,
       defaultRole.id
     )
@@ -190,23 +214,36 @@ auth.post('/register', async (c) => {
   return c.json(
     {
       ok: true,
-      id: result.meta.last_row_id
+      user: {
+        id: result.meta.last_row_id,
+        name,
+        username,
+        role: 'user'
+      }
     },
     201
   )
 })
 
+
+// ======================================
+// LOGIN
+// ======================================
+
 auth.post('/login', async (c) => {
   const body = await c.req.json<{
-    email: string
+    username: string
     password: string
   }>()
 
-  if (!body.email || !body.password) {
+  const username = String(body.username ?? '').trim()
+  const password = String(body.password ?? '')
+
+  if (!username || !password) {
     return c.json(
       {
         ok: false,
-        error: 'Email and password are required'
+        error: 'Username and password are required'
       },
       400
     )
@@ -216,7 +253,8 @@ auth.post('/login', async (c) => {
     .prepare(`
       SELECT
         users.id,
-        users.email,
+        users.name,
+        users.username,
         users.password_hash,
         users.active,
         users.role_id,
@@ -226,13 +264,14 @@ auth.post('/login', async (c) => {
       LEFT JOIN roles
         ON roles.id = users.role_id
 
-      WHERE users.email = ?
+      WHERE users.username = ?
       LIMIT 1
     `)
-    .bind(body.email)
+    .bind(username)
     .first<{
       id: number
-      email: string
+      name: string
+      username: string
       password_hash: string
       active: number
       role_id: number | null
@@ -243,7 +282,7 @@ auth.post('/login', async (c) => {
     return c.json(
       {
         ok: false,
-        error: 'Invalid email or password'
+        error: 'Invalid username or password'
       },
       401
     )
@@ -270,7 +309,7 @@ auth.post('/login', async (c) => {
   }
 
   const passwordOk = await verifyPassword(
-    body.password,
+    password,
     user.password_hash
   )
 
@@ -278,7 +317,7 @@ auth.post('/login', async (c) => {
     return c.json(
       {
         ok: false,
-        error: 'Invalid email or password'
+        error: 'Invalid username or password'
       },
       401
     )
@@ -315,20 +354,35 @@ auth.post('/login', async (c) => {
     ok: true,
     user: {
       id: user.id,
-      email: user.email,
+      name: user.name,
+      username: user.username,
       role: user.role
     }
   })
 })
 
-auth.get('/me', authMiddleware, (c) => {
-  const user = c.get('user')
 
-  return c.json({
-    ok: true,
-    user
-  })
-})
+// ======================================
+// ME
+// ======================================
+
+auth.get(
+  '/me',
+  authMiddleware,
+  (c) => {
+    const user = c.get('user')
+
+    return c.json({
+      ok: true,
+      user
+    })
+  }
+)
+
+
+// ======================================
+// LOGOUT
+// ======================================
 
 auth.post('/logout', async (c) => {
   const sessionToken = getCookie(c, 'session')

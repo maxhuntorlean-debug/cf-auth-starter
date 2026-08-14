@@ -7,7 +7,8 @@ type Bindings = {
 type Variables = {
   user: {
     id: number
-    email: string
+    name: string
+    username: string
     role: string
   }
 }
@@ -19,9 +20,20 @@ export function requirePermission(permissionCode: string) {
   }>(async (c, next) => {
     const user = c.get('user')
 
+    if (!user) {
+      return c.json(
+        {
+          ok: false,
+          error: 'Unauthorized'
+        },
+        401
+      )
+    }
+
     const permission = await c.env.DB
       .prepare(`
-        SELECT permissions.id
+        SELECT
+          permissions.id
         FROM users
 
         JOIN roles
@@ -34,8 +46,9 @@ export function requirePermission(permissionCode: string) {
           ON permissions.id = role_permissions.permission_id
 
         WHERE users.id = ?
-          AND permissions.code = ?
+          AND users.active = 1
           AND roles.active = 1
+          AND permissions.code = ?
 
         LIMIT 1
       `)

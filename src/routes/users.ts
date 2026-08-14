@@ -11,7 +11,8 @@ type Bindings = {
 type Variables = {
   user: {
     id: number
-    email: string
+    name: string
+    username: string
     role: string
   }
 }
@@ -35,7 +36,8 @@ users.get(
       .prepare(`
         SELECT
           users.id,
-          users.email,
+          users.name,
+          users.username,
           users.active,
           users.created_at,
 
@@ -48,7 +50,7 @@ users.get(
         LEFT JOIN roles
           ON roles.id = users.role_id
 
-        ORDER BY users.id
+        ORDER BY users.name, users.id
       `)
       .all()
 
@@ -85,7 +87,8 @@ users.get(
       .prepare(`
         SELECT
           users.id,
-          users.email,
+          users.name,
+          users.username,
           users.active,
           users.created_at,
 
@@ -132,20 +135,22 @@ users.post(
   requirePermission('users.create'),
   async (c) => {
     const body = await c.req.json<{
-      email: string
+      name: string
+      username: string
       password: string
       roleId: number
     }>()
 
-    const email = String(body.email ?? '').trim()
+    const name = String(body.name ?? '').trim()
+    const username = String(body.username ?? '').trim()
     const password = String(body.password ?? '')
     const roleId = Number(body.roleId)
 
-    if (!email || !password) {
+    if (!name || !username || !password) {
       return c.json(
         {
           ok: false,
-          error: 'Email and password are required'
+          error: 'Name, username and password are required'
         },
         400
       )
@@ -165,10 +170,10 @@ users.post(
       .prepare(`
         SELECT id
         FROM users
-        WHERE email = ?
+        WHERE username = ?
         LIMIT 1
       `)
-      .bind(email)
+      .bind(username)
       .first()
 
     if (existingUser) {
@@ -214,15 +219,17 @@ users.post(
     const result = await c.env.DB
       .prepare(`
         INSERT INTO users (
-          email,
+          name,
+          username,
           password_hash,
           role_id,
           active
         )
-        VALUES (?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, 1)
       `)
       .bind(
-        email,
+        name,
+        username,
         passwordHash,
         role.id
       )
@@ -233,7 +240,8 @@ users.post(
         ok: true,
         user: {
           id: result.meta.last_row_id,
-          email,
+          name,
+          username,
           roleId: role.id,
           role: role.code,
           active: true
@@ -270,7 +278,8 @@ users.put(
       .prepare(`
         SELECT
           id,
-          email
+          name,
+          username
         FROM users
         WHERE id = ?
         LIMIT 1
@@ -278,7 +287,8 @@ users.put(
       .bind(userId)
       .first<{
         id: number
-        email: string
+        name: string
+        username: string
       }>()
 
     if (!existingUser) {
@@ -292,11 +302,23 @@ users.put(
     }
 
     const body = await c.req.json<{
+      name: string
       roleId: number
       active: boolean
     }>()
 
+    const name = String(body.name ?? '').trim()
     const roleId = Number(body.roleId)
+
+    if (!name) {
+      return c.json(
+        {
+          ok: false,
+          error: 'Name is required'
+        },
+        400
+      )
+    }
 
     if (!Number.isInteger(roleId) || roleId <= 0) {
       return c.json(
@@ -350,11 +372,13 @@ users.put(
       .prepare(`
         UPDATE users
         SET
+          name = ?,
           role_id = ?,
           active = ?
         WHERE id = ?
       `)
       .bind(
+        name,
         role.id,
         body.active ? 1 : 0,
         userId
@@ -365,7 +389,8 @@ users.put(
       ok: true,
       user: {
         id: userId,
-        email: existingUser.email,
+        name,
+        username: existingUser.username,
         roleId: role.id,
         role: role.code,
         active: body.active
@@ -446,8 +471,6 @@ users.put(
       )
       .run()
 
-    // После смены пароля выкидываем пользователя
-    // со всех устройств.
     await c.env.DB
       .prepare(`
         DELETE FROM sessions

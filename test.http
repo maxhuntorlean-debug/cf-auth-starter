@@ -1,30 +1,28 @@
 @host = https://cf-auth-starter.lateshoy.workers.dev
 
-# Вставляй сюда session после LOGIN
-@session = 
 
+###############################################################################
+# AUTH
+###############################################################################
 
 ### Bootstrap первого администратора
 POST {{host}}/api/auth/bootstrap
 Content-Type: application/json
 
 {
-  "email": "admin@test.no",
+  "name": "Administrator",
+  "username": "admin",
   "password": "Test12345"
 }
 
 
-
-###############################################################################
-# AUTH
-###############################################################################
-
-### Register
-POST {{host}}/api/auth/register
+### Повторный bootstrap — ожидаем 409
+POST {{host}}/api/auth/bootstrap
 Content-Type: application/json
 
 {
-  "email": "user@test.no",
+  "name": "Administrator",
+  "username": "admin",
   "password": "Test12345"
 }
 
@@ -34,19 +32,38 @@ POST {{host}}/api/auth/login
 Content-Type: application/json
 
 {
-  "email": "admin@test.no",
+  "username": "admin",
   "password": "Test12345"
 }
 
 
 ### Me
 GET {{host}}/api/auth/me
-Cookie: session={{session}}
 
 
-### Неверная сессия — ожидаем 401
-GET {{host}}/api/auth/me
-Cookie: session=123456789
+### Неверный пароль — ожидаем 401
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "wrong-password"
+}
+
+
+###############################################################################
+# REGISTER
+###############################################################################
+
+### Register обычного пользователя
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test User",
+  "username": "testuser",
+  "password": "Test12345"
+}
 
 
 ###############################################################################
@@ -55,21 +72,19 @@ Cookie: session=123456789
 
 ### Список пользователей
 GET {{host}}/api/admin/users
-Cookie: session={{session}}
 
 
-### Получить пользователя
+### Получить пользователя ID 1
 GET {{host}}/api/admin/users/1
-Cookie: session={{session}}
 
 
 ### Создать пользователя
 POST {{host}}/api/admin/users
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
-  "email": "test2@test.no",
+  "name": "Second User",
+  "username": "user2",
   "password": "Test12345",
   "roleId": 2
 }
@@ -78,9 +93,9 @@ Cookie: session={{session}}
 ### Изменить пользователя
 PUT {{host}}/api/admin/users/2
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
+  "name": "Updated User",
   "roleId": 2,
   "active": true
 }
@@ -89,18 +104,28 @@ Cookie: session={{session}}
 ### Заблокировать пользователя
 PUT {{host}}/api/admin/users/2
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
+  "name": "Updated User",
   "roleId": 2,
   "active": false
 }
 
 
-### Сменить пароль
+### Включить пользователя
+PUT {{host}}/api/admin/users/2
+Content-Type: application/json
+
+{
+  "name": "Updated User",
+  "roleId": 2,
+  "active": true
+}
+
+
+### Сменить пароль пользователя
 PUT {{host}}/api/admin/users/2/password
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
   "password": "NewTest12345"
@@ -113,32 +138,27 @@ Cookie: session={{session}}
 
 ### Все роли
 GET {{host}}/api/admin/roles
-Cookie: session={{session}}
 
 
 ### Все permissions
 GET {{host}}/api/admin/roles/permissions
-Cookie: session={{session}}
 
 
-### Права роли admin
+### Права admin
 GET {{host}}/api/admin/roles/1/permissions
-Cookie: session={{session}}
 
 
-### Права роли user
+### Права user
 GET {{host}}/api/admin/roles/2/permissions
-Cookie: session={{session}}
 
 
 ###############################################################################
 # PERMISSIONS
 ###############################################################################
 
-### Создать тестовое право
+### Создать тестовое permission
 POST {{host}}/api/admin/roles/permissions
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
   "code": "test.read",
@@ -147,11 +167,10 @@ Cookie: session={{session}}
 }
 
 
-### Изменить permission
-# ID подставь из ответа предыдущего запроса
+### Изменить test.read
+# Подставь реальный ID из ответа предыдущего запроса
 PUT {{host}}/api/admin/roles/permissions/9
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
   "code": "test.read",
@@ -164,12 +183,9 @@ Cookie: session={{session}}
 # ROLE PERMISSIONS
 ###############################################################################
 
-### Выдать роли user право users.read
-# Здесь 2 — пример ID permission users.read.
-# Сначала посмотри реальный ID через GET permissions.
+### Выдать роли user users.read
 PUT {{host}}/api/admin/roles/2/permissions
 Content-Type: application/json
-Cookie: session={{session}}
 
 {
   "permissionIds": [2]
@@ -182,9 +198,7 @@ Cookie: session={{session}}
 
 ### Logout
 POST {{host}}/api/auth/logout
-Cookie: session={{session}}
 
 
 ### После logout — ожидаем 401
 GET {{host}}/api/auth/me
-Cookie: session={{session}}

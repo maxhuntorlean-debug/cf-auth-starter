@@ -1,19 +1,19 @@
 import { createMiddleware } from 'hono/factory'
 import { getCookie } from 'hono/cookie'
+
 import { hashSessionToken } from '../lib/session'
 
 type Bindings = {
   DB: D1Database
 }
 
-type User = {
-  id: number
-  email: string
-  role: string
-}
-
 type Variables = {
-  user: User
+  user: {
+    id: number
+    name: string
+    username: string
+    role: string
+  }
 }
 
 export const authMiddleware = createMiddleware<{
@@ -34,21 +34,27 @@ export const authMiddleware = createMiddleware<{
 
   const sessionHash = await hashSessionToken(sessionToken)
 
-  const user = await c.env.DB
+  const session = await c.env.DB
     .prepare(`
       SELECT
-        users.id,
-        users.email,
+        sessions.id AS session_id,
+        sessions.expires_at,
+
+        users.id AS user_id,
+        users.name,
+        users.username,
         users.active,
-        users.role_id,
+
+        roles.id AS role_id,
         roles.code AS role,
-        sessions.expires_at
+        roles.active AS role_active
+
       FROM sessions
 
       JOIN users
         ON users.id = sessions.user_id
 
-      LEFT JOIN roles
+      JOIN roles
         ON roles.id = users.role_id
 
       WHERE sessions.token_hash = ?
@@ -56,15 +62,20 @@ export const authMiddleware = createMiddleware<{
     `)
     .bind(sessionHash)
     .first<{
-      id: number
-      email: string
-      active: number
-      role_id: number | null
-      role: string | null
+      session_id: number
       expires_at: string
+
+      user_id: number
+      name: string
+      username: string
+      active: number
+
+      role_id: number
+      role: string
+      role_active: number
     }>()
 
-  if (!user) {
+  if (!session) {
     return c.json(
       {
         ok: false,
@@ -74,27 +85,15 @@ export const authMiddleware = createMiddleware<{
     )
   }
 
-  if (!user.active) {
-    return c.json(
-      {
-        ok: false,
-        error: 'User is inactive'
-      },
-      403
-    )
-  }
+  if (new Date(session.expires_at).getTime() <= Date.now()) {
+    await c.env.DB
+      .prepare(`
+        DELETE FROM sessions
+        WHERE id = ?
+      `)
+      .bind(session.session_id)
+      .run()
 
-  if (!user.role_id || !user.role) {
-    return c.json(
-      {
-        ok: false,
-        error: 'User role is not configured'
-      },
-      403
-    )
-  }
-
-  if (new Date(user.expires_at) <= new Date()) {
     return c.json(
       {
         ok: false,
@@ -104,10 +103,31 @@ export const authMiddleware = createMiddleware<{
     )
   }
 
+  if (!session.active) {
+    return c.json(
+      {
+        ok: false,
+        error: 'User is inactive'
+      },
+      403
+    )
+  }
+
+  if (!session.role_active) {
+    return c.json(
+      {
+        ok: false,
+        error: 'User role is inactive'
+      },
+      403
+    )
+  }
+
   c.set('user', {
-    id: user.id,
-    email: user.email,
-    role: user.role
+    id: session.user_id,
+    name: session.name,
+    username: session.username,
+    role: session.role
   })
 
   await next()
