@@ -1,118 +1,33 @@
 # cf-auth-starter
 
-Минимальная универсальная API-болванка для Cloudflare Workers.
+Универсальная API-болванка для Cloudflare Workers с авторизацией, серверными сессиями и RBAC.
 
-Проект содержит готовое ядро:
+## Стек
 
 - TypeScript
 - Hono
 - Cloudflare Workers
 - Cloudflare D1
-- авторизация
-- серверные сессии
-- пользователи
-- роли
-- права доступа
-- RBAC
+- Wrangler
+- Web Crypto API
+
+JWT не используется. Авторизация работает через серверные сессии в D1 и `HttpOnly` cookie.
+
+## Возможности
+
 - bootstrap первого администратора
+- login / logout / current user
+- серверные сессии
+- пользователи и смена пароля
+- создание и редактирование ролей
+- создание и редактирование permissions
+- назначение permissions ролям
+- auth/permission middleware
+- credentialed CORS для отдельного frontend/admin приложения
 
-Болванка предназначена для быстрого старта новых проектов:
+## База данных
 
-```text
-cf-auth-starter
-      ↓
-shop-api
-crm-api
-warehouse-api
-service-api
-...
-```
-
-Бизнес-логика конкретного проекта добавляется поверх готового ядра.
-
----
-
-# Стек
-
-```text
-TypeScript
-Hono
-Cloudflare Workers
-Cloudflare D1
-Wrangler
-Web Crypto API
-```
-
-JWT не используется.
-
-Авторизация работает через серверные сессии в D1 и `HttpOnly` cookie.
-
----
-
-# Архитектура
-
-```text
-Client
-  │
-  │ HTTPS
-  ▼
-Cloudflare Worker
-  │
-  ▼
-Hono
-  │
-  ├── Auth Middleware
-  ├── Permission Middleware
-  │
-  ▼
-Routes
-  │
-  ▼
-Cloudflare D1
-```
-
----
-
-# Структура проекта
-
-```text
-cf-auth-starter/
-│
-├── migrations/
-│   └── 0001_init.sql
-│
-├── src/
-│   ├── lib/
-│   │   ├── password.ts
-│   │   └── session.ts
-│   │
-│   ├── middleware/
-│   │   ├── auth.ts
-│   │   └── permission.ts
-│   │
-│   ├── routes/
-│   │   ├── auth.ts
-│   │   ├── users.ts
-│   │   └── roles.ts
-│   │
-│   └── index.ts
-│
-├── test.http
-├── package.json
-├── package-lock.json
-├── tsconfig.json
-├── wrangler.jsonc
-├── .gitignore
-└── README.md
-```
-
----
-
-# База данных
-
-Используется Cloudflare D1.
-
-Создаются таблицы:
+Миграция создаёт:
 
 ```text
 users
@@ -122,246 +37,58 @@ role_permissions
 sessions
 ```
 
-Пользователь:
-
-```text
-users
-├── id
-├── name
-├── username
-├── password_hash
-├── role_id
-├── active
-└── created_at
-```
-
-Связи:
-
-```text
-users
-  │
-  │ role_id
-  ▼
-roles
-  │
-  ▼
-role_permissions
-  │
-  ▼
-permissions
-```
-
-Сессии:
-
-```text
-users
-  │
-  ▼
-sessions
-```
-
----
-
-# Роли
-
-После первой миграции автоматически создаются:
+Стартовые роли:
 
 ```text
 admin
 user
 ```
 
-`admin` получает все базовые права.
+`admin` получает все стартовые permissions. `user` создаётся без административных прав.
 
-`user` создаётся без административных прав.
-
----
-
-# Базовые permissions
+Стартовые permissions:
 
 ```text
 admin.access
-
 users.read
 users.create
 users.update
-
 roles.read
 roles.update
-
 permissions.read
 permissions.update
 ```
 
-В дальнейшем можно добавлять права конкретного проекта.
+Коды permissions и групп — технические идентификаторы. Используйте латиницу без пробелов, например `sales.create` и группу `sales`.
 
-Например:
-
-```text
-products.read
-products.create
-products.update
-
-orders.read
-orders.create
-orders.update
-orders.cancel
-```
-
----
-
-# Проверка прав
-
-Маршрут защищается через:
+Маршруты защищаются на backend через:
 
 ```ts
 requirePermission('users.read')
 ```
 
-Пример:
+## Cookie и CORS
 
-```ts
-users.get(
-  '/',
-  authMiddleware,
-  requirePermission('users.read'),
-  async (c) => {
-    // ...
-  }
-)
-```
-
-Логика:
-
-```text
-Request
-  ↓
-authMiddleware
-  ↓
-User
-  ↓
-requirePermission(...)
-  ↓
-Role
-  ↓
-Permissions
-  ↓
-Route
-```
-
----
-
-# Авторизация
-
-Используются серверные сессии.
-
-После успешного login:
-
-```text
-username + password
-        ↓
-проверка password hash
-        ↓
-случайный session token
-        ↓
-SHA-256(token)
-        ↓
-D1 sessions
-```
-
-Сам session token передаётся клиенту через cookie:
+Сессия передаётся через cookie:
 
 ```text
 HttpOnly
 Secure
-SameSite=Lax
+SameSite=None
+Path=/
 ```
 
-Срок сессии:
+Это позволяет использовать отдельные origin для frontend и API. На frontend запросы должны выполняться с:
 
-```text
-1 год
+```js
+credentials: "include"
 ```
 
-В D1 хранится только хеш session token.
+Разрешённый origin задаётся через `ADMIN_ORIGIN`.
 
----
+## Настройка wrangler.jsonc
 
-# Пароли
-
-Открытые пароли в базе не хранятся.
-
-Используется:
-
-```text
-PBKDF2
-SHA-256
-random salt
-```
-
-В `users.password_hash` сохраняется:
-
-```text
-salt:hash
-```
-
----
-
-# Установка
-
-```bash
-npm install
-```
-
----
-
-# Авторизация Wrangler
-
-```bash
-npx wrangler login
-```
-
-Проверить аккаунт:
-
-```bash
-npx wrangler whoami
-```
-
----
-
-# Создание D1
-
-Для нового проекта:
-
-```bash
-npx wrangler d1 create my-project-db
-```
-
-Для binding используем:
-
-```text
-DB
-```
-
-Пример:
-
-```text
-What binding name would you like to use?
-DB
-```
-
-Если локальная разработка должна работать сразу с удалённой D1:
-
-```text
-For local dev, do you want to connect to the remote resource?
-y
-```
-
----
-
-# wrangler.jsonc
-
-Пример:
+Перед использованием starter замените шаблонные значения:
 
 ```jsonc
 {
@@ -369,7 +96,9 @@ y
   "name": "my-project-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-14",
-
+  "vars": {
+    "ADMIN_ORIGIN": "https://my-project-admin.example.com"
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -381,45 +110,34 @@ y
 }
 ```
 
-В коде база всегда доступна как:
+Binding `DB` менять не нужно.
 
-```ts
-c.env.DB
+## Новый проект
+
+```bash
+npm install
+npx wrangler login
+npx wrangler d1 create my-project-db
 ```
 
-Binding `DB` между проектами менять не нужно.
-
----
-
-# Применение миграции
+Перенесите `database_name` и `database_id` в `wrangler.jsonc`, задайте `ADMIN_ORIGIN`, затем:
 
 ```bash
 npx wrangler d1 migrations apply my-project-db --remote
-```
-
-Миграция автоматически создаст таблицы, роли и базовые permissions.
-
----
-
-# Deploy
-
-```bash
 npm run deploy
 ```
 
-После deploy Worker будет доступен примерно по адресу:
+Для разработки:
 
-```text
-https://my-project-api.<account>.workers.dev
+```bash
+npm run dev
 ```
 
----
+Если Wrangler спрашивает, подключаться ли для local dev к remote resource, выбирайте `y`, если хотите работать с удалённой D1.
 
-# Первый администратор
+## Первый администратор
 
-На новой пустой базе ещё нет пользователей.
-
-Первый администратор создаётся один раз через bootstrap:
+На новой пустой базе один раз вызовите:
 
 ```http
 POST /api/auth/bootstrap
@@ -432,97 +150,19 @@ Content-Type: application/json
 }
 ```
 
-Пример ответа:
+После создания первого пользователя bootstrap блокируется.
 
-```json
-{
-  "ok": true,
-  "user": {
-    "id": 1,
-    "name": "Administrator",
-    "username": "admin",
-    "role": "admin"
-  }
-}
-```
-
-После появления первого пользователя bootstrap перестаёт работать.
-
-Повторный вызов:
-
-```json
-{
-  "ok": false,
-  "error": "Bootstrap already completed"
-}
-```
-
----
-
-# Auth API
-
-## Bootstrap
+## Auth API
 
 ```text
 POST /api/auth/bootstrap
-```
-
-Создаёт первого администратора.
-
-Работает только на пустой базе.
-
----
-
-## Register
-
-```text
 POST /api/auth/register
-```
-
-Пример:
-
-```json
-{
-  "name": "Test User",
-  "username": "testuser",
-  "password": "Test12345"
-}
-```
-
-Новый пользователь получает роль:
-
-```text
-user
-```
-
----
-
-## Login
-
-```text
 POST /api/auth/login
+GET  /api/auth/me
+POST /api/auth/logout
 ```
 
-Пример:
-
-```json
-{
-  "username": "admin",
-  "password": "Test12345"
-}
-```
-
-После успешного входа сервер создаёт сессию и возвращает cookie.
-
----
-
-## Current user
-
-```text
-GET /api/auth/me
-```
-
-Пример ответа:
+`GET /api/auth/me` возвращает пользователя вместе с его permissions:
 
 ```json
 {
@@ -531,198 +171,58 @@ GET /api/auth/me
     "id": 1,
     "name": "Administrator",
     "username": "admin",
-    "role": "admin"
+    "role": "admin",
+    "permissions": [
+      "admin.access",
+      "permissions.read",
+      "permissions.update",
+      "roles.read",
+      "roles.update",
+      "users.create",
+      "users.read",
+      "users.update"
+    ]
   }
 }
 ```
 
----
+Если публичная регистрация проекту не нужна, `/api/auth/register` можно удалить и создавать пользователей только через Admin API.
 
-## Logout
-
-```text
-POST /api/auth/logout
-```
-
-При logout:
+## Users API
 
 ```text
-session удаляется из D1
-+
-cookie удаляется у клиента
+GET  /api/admin/users                 users.read
+GET  /api/admin/users/:id             users.read
+POST /api/admin/users                 users.create
+PUT  /api/admin/users/:id             users.update
+PUT  /api/admin/users/:id/password    users.update
 ```
 
-Старая сессия после этого больше не работает.
+После смены пароля активные сессии пользователя удаляются.
 
----
-
-# Users API
-
-Все маршруты пользователей защищены permissions.
-
-## Список пользователей
+## Roles API
 
 ```text
-GET /api/admin/users
+GET  /api/admin/roles                   roles.read
+POST /api/admin/roles                   roles.update
+PUT  /api/admin/roles/:id               roles.update
+GET  /api/admin/roles/:id/permissions   roles.read
+PUT  /api/admin/roles/:id/permissions   roles.update
 ```
 
-Permission:
-
-```text
-users.read
-```
-
----
-
-## Получить пользователя
-
-```text
-GET /api/admin/users/:id
-```
-
-Permission:
-
-```text
-users.read
-```
-
----
-
-## Создать пользователя
-
-```text
-POST /api/admin/users
-```
-
-Permission:
-
-```text
-users.create
-```
-
-Пример:
+Создание роли:
 
 ```json
 {
-  "name": "John Smith",
-  "username": "john",
-  "password": "Test12345",
-  "roleId": 2
-}
-```
-
----
-
-## Изменить пользователя
-
-```text
-PUT /api/admin/users/:id
-```
-
-Permission:
-
-```text
-users.update
-```
-
-Пример:
-
-```json
-{
-  "name": "John Smith",
-  "roleId": 2,
+  "name": "Кассир",
+  "code": "cashier",
   "active": true
 }
 ```
 
-Заблокировать:
+Системную роль `admin` нельзя отключить или переименовать её code. `admin.access` нельзя снять с роли `admin`.
 
-```json
-{
-  "name": "John Smith",
-  "roleId": 2,
-  "active": false
-}
-```
-
-Заблокированный пользователь не может пользоваться защищённым API.
-
----
-
-## Сменить пароль
-
-```text
-PUT /api/admin/users/:id/password
-```
-
-Permission:
-
-```text
-users.update
-```
-
-Пример:
-
-```json
-{
-  "password": "NewPassword123"
-}
-```
-
-После смены пароля:
-
-```text
-DELETE FROM sessions
-WHERE user_id = ...
-```
-
-То есть пользователь автоматически выходит со всех устройств.
-
----
-
-# Roles API
-
-## Получить роли
-
-```text
-GET /api/admin/roles
-```
-
-Permission:
-
-```text
-roles.read
-```
-
----
-
-## Получить права роли
-
-```text
-GET /api/admin/roles/:id/permissions
-```
-
-Permission:
-
-```text
-roles.read
-```
-
----
-
-## Изменить права роли
-
-```text
-PUT /api/admin/roles/:id/permissions
-```
-
-Permission:
-
-```text
-roles.update
-```
-
-Пример:
+Назначение permissions полностью заменяет текущий набор роли:
 
 ```json
 {
@@ -730,197 +230,70 @@ roles.update
 }
 ```
 
-Этот запрос полностью заменяет набор permissions указанной роли.
-
----
-
-# Permissions API
-
-## Получить permissions
+## Permissions API
 
 ```text
-GET /api/admin/roles/permissions
-```
-
-Permission:
-
-```text
-permissions.read
-```
-
----
-
-## Создать permission
-
-```text
-POST /api/admin/roles/permissions
-```
-
-Permission:
-
-```text
-permissions.update
+GET  /api/admin/roles/permissions       permissions.read
+POST /api/admin/roles/permissions       permissions.update
+PUT  /api/admin/roles/permissions/:id   permissions.update
 ```
 
 Пример:
 
 ```json
 {
-  "code": "products.read",
-  "name": "Read products",
-  "groupName": "products"
+  "code": "sales.create",
+  "name": "Создание продажи",
+  "groupName": "sales"
 }
 ```
 
----
+Код `admin.access` защищён от переименования.
 
-## Изменить permission
+## Добавление бизнес-модулей
 
-```text
-PUT /api/admin/roles/permissions/:id
-```
-
-Permission:
-
-```text
-permissions.update
-```
-
-Пример:
-
-```json
-{
-  "code": "products.read",
-  "name": "Read products",
-  "groupName": "products"
-}
-```
-
----
-
-# HTTP статусы
-
-```text
-200 OK
-201 Created
-400 Bad Request
-401 Unauthorized
-403 Forbidden
-404 Not Found
-409 Conflict
-500 Internal Server Error
-```
-
-Разница:
-
-```text
-401
-→ пользователь не авторизован
-
-403
-→ пользователь авторизован,
-  но нет нужного permission
-```
-
----
-
-# Разработка нового проекта
-
-После копирования starter-а бизнес-модули добавляются отдельно.
-
-Например интернет-магазин:
-
-```text
-src/
-├── lib/
-├── middleware/
-├── routes/
-│   ├── auth.ts
-│   ├── users.ts
-│   ├── roles.ts
-│   ├── products.ts
-│   ├── categories.ts
-│   └── orders.ts
-└── index.ts
-```
-
-Добавляем новые permissions:
+Auth/RBAC ядро переписывать не требуется. Добавляйте новые routes и permissions, например:
 
 ```text
 products.read
 products.create
 products.update
-
-orders.read
-orders.create
-orders.update
+sales.read
+sales.create
+sales.cancel
 ```
 
-И защищаем маршруты:
+и защищайте соответствующие endpoints через `requirePermission(...)`.
 
-```ts
-requirePermission('products.update')
-```
-
-Auth-систему при этом переписывать не требуется.
-
----
-
-# Создание нового проекта из starter
-
-Типичный процесс:
+## Типовой процесс копирования starter
 
 ```text
 cf-auth-starter
       ↓
 новый Git repository
       ↓
-поменять имя Worker
+поменять Worker name
       ↓
-создать новую D1
+создать D1
       ↓
-binding DB
+заполнить database_name/database_id
+      ↓
+задать ADMIN_ORIGIN
       ↓
 применить migration
       ↓
-deploy
+deploy API
       ↓
 bootstrap admin
+      ↓
+подключить frontend
       ↓
 добавлять бизнес-модули
 ```
 
-Команды:
+## Git
 
-```bash
-npm install
-
-npx wrangler login
-
-npx wrangler d1 create my-project-db
-
-npx wrangler d1 migrations apply my-project-db --remote
-
-npm run deploy
-```
-
-После deploy вызвать:
-
-```text
-POST /api/auth/bootstrap
-```
-
----
-
-# Git
-
-Перед commit:
-
-```bash
-git status
-```
-
-В Git не должны попадать:
+В репозиторий не должны попадать:
 
 ```text
 node_modules/
@@ -930,104 +303,3 @@ node_modules/
 .env.*
 repomix-output.xml
 ```
-
-Первый commit:
-
-```bash
-git init
-git add .
-git commit -m "Initial Cloudflare auth starter"
-git branch -M main
-```
-
-Подключить GitHub:
-
-```bash
-git remote add origin https://github.com/USERNAME/cf-auth-starter.git
-git push -u origin main
-```
-
-Рекомендуется включить:
-
-```text
-GitHub
-→ Settings
-→ General
-→ Template repository
-```
-
-Тогда новый проект можно создавать через:
-
-```text
-Use this template
-```
-
----
-
-# Безопасность
-
-Основные принципы starter-а:
-
-```text
-пароли не хранятся открытым текстом
-session token не хранится открытым текстом в D1
-HttpOnly cookie
-Secure cookie
-SameSite=Lax
-параметризованные SQL запросы
-RBAC permissions
-отключение пользователей
-отзыв сессий
-смена пароля сбрасывает сессии
-bootstrap работает только один раз
-```
-
----
-
-# test.http
-
-Файл `test.http` используется для проверки API из VS Code.
-
-Рекомендуемый порядок:
-
-```text
-bootstrap
-↓
-login
-↓
-me
-↓
-users
-↓
-roles
-↓
-permissions
-↓
-logout
-```
-
-Не хранить реальные session tokens и production-пароли в Git.
-
----
-
-# Цель проекта
-
-`cf-auth-starter` — это не готовое бизнес-приложение.
-
-Это минимальное ядро:
-
-```text
-Auth
-+
-Users
-+
-Roles
-+
-Permissions
-+
-Sessions
-+
-D1
-```
-
-На его основе можно быстро строить конкретные приложения без повторного написания авторизации и системы прав.
